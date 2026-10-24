@@ -8,6 +8,12 @@
 
 ![界面预览](screenshot.png)
 
+## 下载
+
+| 版本 | 说明 |
+| --- | --- |
+| [**PerfTicker.exe v1.1.0**](https://github.com/QiuSui1145/PerfTicker/releases/latest) | Windows x64 单文件（约 47 MB），自包含运行时，双击即用 |
+
 ---
 
 ## 一、这是什么
