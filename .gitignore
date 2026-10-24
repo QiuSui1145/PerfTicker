@@ -1,0 +1,19 @@
+# 构建产物
+bin/
+obj/
+dist/
+*.user
+*.suo
+.vs/
+
+# 本地测试脚本（开发用，不入库）
+dev/
+*.log
+*.tmp.png
+tmp*.png
+shot*.png
+verify*.png
+
+# 系统文件
+Thumbs.db
+.DS_Store
