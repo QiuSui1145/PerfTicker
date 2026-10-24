@@ -28,3 +28,8 @@ video/*.png
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# 交付物（走 Release，不入库）
+/PerfTicker-promo.mp4
+/PerfTicker-cover.png
+
