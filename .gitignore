@@ -33,3 +33,6 @@ Thumbs.db
 /PerfTicker-promo.mp4
 /PerfTicker-cover.png
 
+video/*.ps1
+video/package*.json
+
