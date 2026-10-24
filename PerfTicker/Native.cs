@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace PerfTicker;
 
@@ -27,6 +27,9 @@ internal static class Native
 
     [DllImport("kernel32.dll")]
     public static extern ulong GetTickCount64();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetLogicalProcessorInformationEx(int relationshipType, IntPtr buffer, ref int returnedLength);
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();

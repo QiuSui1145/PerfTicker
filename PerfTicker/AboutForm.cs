@@ -18,8 +18,14 @@ internal sealed class AboutForm : Form
         ("Bilibili  space.bilibili.com/1764510273", "https://space.bilibili.com/1764510273"),
     };
 
-    public AboutForm()
+    private static readonly string Version =
+        (typeof(AboutForm).Assembly.GetName().Version ?? new System.Version(1, 0, 0)).ToString(3);
+
+    private readonly Hardware _hw;
+
+    public AboutForm(Hardware hw)
     {
+        _hw = hw;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         FormBorderStyle = FormBorderStyle.None;
@@ -27,7 +33,7 @@ internal sealed class AboutForm : Form
         ShowInTaskbar = false;
         Text = "关于 · 性能行情终端";
         BackColor = Theme.Panel;
-        ClientSize = new Size(Theme.Px(460), Theme.Px(292));
+        ClientSize = new Size(Theme.Px(460), Theme.Px(396));
         _links = LinkDefs.Select(l => (l.label, l.url, Rectangle.Empty)).ToArray();
     }
 
@@ -62,7 +68,7 @@ internal sealed class AboutForm : Form
         }
 
         Theme.Text(g, "性能行情终端", Theme.UiXL, Theme.TextHi, new Rectangle(logo.Right + Theme.Px(12), Theme.Px(22), Theme.Px(300), Theme.Px(24)), Theme.AL);
-        Theme.Text(g, "PerfTicker · 1.1.0", Theme.NumXXS, Theme.TextDim, new Rectangle(logo.Right + Theme.Px(12), Theme.Px(44), Theme.Px(300), Theme.Px(18)), Theme.AL);
+        Theme.Text(g, "PerfTicker · " + Version, Theme.NumXXS, Theme.TextDim, new Rectangle(logo.Right + Theme.Px(12), Theme.Px(44), Theme.Px(300), Theme.Px(18)), Theme.AL);
 
         // 关闭按钮
         _closeRect = new Rectangle(ClientSize.Width - Theme.Px(40), Theme.Px(10), Theme.Px(28), Theme.Px(24));
@@ -102,6 +108,28 @@ internal sealed class AboutForm : Form
         y += Theme.Px(24);
         Theme.Text(g, "本程序以 GPLv3 协议开源，欢迎 Fork / Star / 提 Issue", Theme.UiXS, Theme.TextFade,
             new Rectangle(pad, y, ClientSize.Width - pad * 2, Theme.Px(18)), Theme.AL);
+
+        // ── 运行环境 / 硬件配置 / 营收基准 ──
+        y += Theme.Px(26);
+        Theme.Fill(g, new Rectangle(pad, y, ClientSize.Width - pad * 2, 1), Theme.Line);
+        y += Theme.Px(10);
+
+        void Env(string label, string value)
+        {
+            Theme.Text(g, label, Theme.UiXS, Theme.TextDim, new Rectangle(pad, y, Theme.Px(64), Theme.Px(17)), Theme.AL);
+            Theme.TextEllipsis(g, value, Theme.UiXS, Color.FromArgb(0xB8, Theme.Txt),
+                new Rectangle(pad + Theme.Px(66), y, ClientSize.Width - pad * 2 - Theme.Px(66), Theme.Px(17)), Theme.AL);
+            y += Theme.Px(18);
+        }
+
+        if (_hw != null)
+        {
+            Env("运行环境", _hw.OsLine);
+            Env("硬件配置", _hw.CpuLine);
+            Env("", _hw.GpuLine);
+            Env("", $"{_hw.MemTotalGB:0.#}GB 内存 · 固定磁盘 ×{_hw.FixedDisks}" + (_hw.NetMaxGbps > 0 ? $" · 网络 {_hw.NetMaxGbps:0.#}Gbps" : ""));
+            Env("营收基准", _hw.WeightLine);
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)

@@ -6,6 +6,7 @@ namespace PerfTicker;
 internal sealed class AppForm : Form
 {
     public AppState St = new();
+    public readonly Hardware Hw = new();
 
     private Sampler _sampler;
     private readonly List<Panel> _panels = new();
@@ -39,6 +40,7 @@ internal sealed class AppForm : Form
     private int _settingsHover = -1;
     private Rectangle _setPanel, _setAuto, _setMarquee, _setThemeDark, _setThemeLight, _setThemeAuto;
     private double _ecoLastSave;
+    private bool _hwProbed;
     private readonly List<(string text, Color color, Action action)> _menuItems = new();
     private Rectangle _menuRect;
     private int _menuHover = -1;
@@ -326,7 +328,7 @@ internal sealed class AppForm : Form
     {
         try
         {
-            using var f = new AboutForm();
+            using var f = new AboutForm(Hw);
             f.ShowDialog(this);
         }
         catch (Exception ex) { Log("ABOUT FAIL " + ex); }
@@ -452,7 +454,7 @@ internal sealed class AppForm : Form
         Theme.Fill(g, new Rectangle(r.X, r.Y, Theme.Px(3), r.Height), Theme.Gold);
 
         Theme.Text(g, "设置", Theme.UiL, Theme.TextHi, new Rectangle(r.X + pad, r.Y + Theme.Px(8), Theme.Px(80), Theme.Px(20)), Theme.AL);
-        Theme.Text(g, "v1.1.0", Theme.NumXXS, Theme.TextFade, new Rectangle(r.Right - Theme.Px(58), r.Y + Theme.Px(8), Theme.Px(46), Theme.Px(20)), Theme.AR);
+        Theme.Text(g, "v" + (typeof(AppForm).Assembly.GetName().Version ?? new Version(1, 0, 0)).ToString(3), Theme.NumXXS, Theme.TextFade, new Rectangle(r.Right - Theme.Px(58), r.Y + Theme.Px(8), Theme.Px(46), Theme.Px(20)), Theme.AR);
 
         int ry = r.Y + Theme.Px(36);
         void Switch(Rectangle box, bool on, int hover, int idx)
@@ -723,6 +725,14 @@ internal sealed class AppForm : Form
                 St.ProcHist.Remove(key);
         }
 
+        if (!_hwProbed && s.Procs.Count > 0)
+        {
+            _hwProbed = true;
+            Hw.Probe(s, s.Gpu);
+            St.Economy.ApplyWeights(Hw);
+            AddTape($"硬件探测完成 · {Hw.LogicalCores} 线程 / {Hw.MemTotalGB:0}G 内存 / {(Hw.HasGpu ? Hw.GpuMemGB.ToString("0.#") + "G 显存" : "无独显")}", Theme.Blue);
+        }
+
         St.Procs = s.Procs;
         SortProcs();
         DetectEvents(prev, s);
@@ -898,7 +908,7 @@ internal sealed class AppForm : Form
     public void ToggleEconomy()
     {
         St.Economy.Enabled = !St.Economy.Enabled;
-        if (St.Economy.Enabled) St.Economy.Reset();
+        // 注意：只有手动「归零」才清零，开关切换保持累计值
         LayoutPanels();
         AddTape(St.Economy.Enabled ? "营收系统已启动 · 按占用率结算产能" : "营收系统已关闭 · 结算 " + (St.Economy.Total >= 0 ? "+" : "") + St.Economy.Total.ToString("N2") + " 元",
             St.Economy.Enabled ? Theme.Gold : Theme.TextFade);

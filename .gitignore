@@ -1,4 +1,4 @@
-# 构建产物
+﻿# 构建产物
 bin/
 obj/
 dist/
@@ -13,6 +13,17 @@ dev/
 tmp*.png
 shot*.png
 verify*.png
+
+# 视频工程：只保留 Remotion 源码
+video/node_modules/
+video/promo/node_modules/
+video/promo/out/
+video/promo/public/
+video/clips/
+video/raw/
+video/raw2/
+video/*.png
+*.mp4
 
 # 系统文件
 Thumbs.db

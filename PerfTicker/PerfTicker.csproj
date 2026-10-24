@@ -19,8 +19,8 @@
     <Product>性能行情终端</Product>
     <AssemblyTitle>PerfTicker · 性能行情终端</AssemblyTitle>
     <Company>PerfTicker</Company>
-    <Version>1.1.0</Version>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.2.0</Version>
+    <FileVersion>1.2.0.0</FileVersion>
     <Copyright>© 2026 PerfTicker</Copyright>
     <DebugType>none</DebugType>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

@@ -6,7 +6,8 @@ internal sealed class EcoPart
     public string Name = "";
     public double Load;        // 当前占用率 0..100
     public double LoadShown;   // 显示用平滑值
-    public double Full;        // 满载收益（元/秒）
+    public double BaseFull;    // 基准满载收益（元/秒）
+    public double Full;        // 按硬件折算后的满载收益（元/秒）
     public double Net;         // 当前净收益（元/秒，平滑显示）
     public double Total;       // 累计净收益
     public double BreakEven;   // 盈亏平衡占用率（%）
@@ -28,16 +29,24 @@ internal sealed class Economy
 
     public readonly EcoPart[] Parts =
     {
-        new() { Name = "CPU 综合", Full = 22.0, BreakEven = 30 },
-        new() { Name = "GPU 引擎", Full = 30.0, BreakEven = 28 },
-        new() { Name = "内存", Full = 12.0, BreakEven = 35 },
-        new() { Name = "磁盘 IO", Full = 7.2, BreakEven = 25 },
-        new() { Name = "网络", Full = 7.2, BreakEven = 25 },
+        new() { Name = "CPU 综合", BaseFull = 22.0, BreakEven = 30 },
+        new() { Name = "GPU 引擎", BaseFull = 30.0, BreakEven = 28 },
+        new() { Name = "内存", BaseFull = 12.0, BreakEven = 35 },
+        new() { Name = "磁盘 IO", BaseFull = 7.2, BreakEven = 25 },
+        new() { Name = "网络", BaseFull = 7.2, BreakEven = 25 },
     };
 
     public readonly List<double> RateHist = new(240);
     private double _histAcc;
     private const double K = 1.7;   // 负载弹性：越接近满载边际收益越高
+
+    /// <summary>按硬件权重折算满载收益（不同设备同占用率收益可比）。</summary>
+    public void ApplyWeights(Hardware hw)
+    {
+        double[] w = { hw.Wcpu, hw.Wgpu, hw.Wmem, hw.Wdisk, hw.Wnet };
+        for (int i = 0; i < Parts.Length && i < w.Length; i++)
+            Parts[i].Full = Parts[i].BaseFull * w[i];
+    }
 
     public void Restore(double total, double peak, double seconds)
     {
