@@ -8,6 +8,17 @@
 
 ![界面预览](screenshot.png)
 
+## 宣传片
+
+| 文件 | 说明 |
+| --- | --- |
+| [**PerfTicker-promo.mp4**](https://github.com/QiuSui1145/PerfTicker/releases/download/v1.1.0/PerfTicker-promo.mp4) | 74 秒 · 1920×1080 · 30fps · **无音轨**（音乐自行配） |
+| [**PerfTicker-cover.png**](https://github.com/QiuSui1145/PerfTicker/releases/download/v1.1.0/PerfTicker-cover.png) | 16:9 封面 1920×1080 |
+
+宣传片结构：片头 Logo → 全景 → 自选/逐核行情 → K 线主图 → 进程列表 → 营收中心 → 设置与关于 → 片尾。
+全部为**深色主题实机录屏**（离屏抓帧，非桌面录制），叠加推拉摇移运镜、高亮框与中文字幕。
+工程基于 Remotion，源码在 `video/promo`，可改文案/节奏后重新渲染。
+
 ## 下载
 
 | 版本 | 说明 |
