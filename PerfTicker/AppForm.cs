@@ -35,6 +35,8 @@ internal sealed class AppForm : Form
     private Settings _settings;
     private NotifyIcon _notify;
     private ToolStripMenuItem _trayWallpaper;
+    private WallBar _wallBar;
+    private bool _wallAttached;
     private bool _trayOk;
     private bool _reallyExit;
     private bool _settingsOpen;
@@ -91,7 +93,8 @@ internal sealed class AppForm : Form
     private void FlushDirty()
     {
         long now = Environment.TickCount64;
-        if (now - _lastPaintAt < 36 || _due.Count == 0) return;   // 全局上限约 27fps
+        int budget = St.Wallpaper ? 90 : 36;   // 壁纸模式降帧省电（~11fps）
+        if (now - _lastPaintAt < budget || _due.Count == 0) return;
 
         Panel best = null;
         long bestDue = long.MaxValue;
@@ -408,19 +411,61 @@ internal sealed class AppForm : Form
         TopMost = false;
         ShowInTaskbar = false;
         if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+
+        // 真·壁纸：挂到桌面 WorkerW（位于图标之下），桌面图标与右键菜单都归桌面
         var scr = Screen.FromControl(this).Bounds;
         Bounds = scr;
         LayoutPanels();
-        SendToBottom();
-        if (persist) { SaveSettings(); AddTape("已切换为桌面壁纸 · 仅控件可点，其余点击穿透", Theme.Cyan); }
+        _wallAttached = DesktopHost.Attach(Handle, out string detail);
+        if (!_wallAttached)
+        {
+            // 退回：置底窗口 + 点击穿透
+            SendToBottom();
+        }
+
+        ShowWallBar(true);
+        Invalidate();
+        Update();
+
+        if (persist)
+        {
+            SaveSettings();
+            AddTape(_wallAttached
+                ? "已切换为桌面壁纸 · " + detail + " · 图标与右键归桌面，操作用悬浮控制条"
+                : "已切换为壁纸（兼容模式） · " + detail + " · 仅控件可点", Theme.Cyan);
+        }
         if (_trayWallpaper != null) _trayWallpaper.Checked = true;
         Invalidate();
+    }
+
+    private void ShowWallBar(bool show)
+    {
+        try
+        {
+            if (show)
+            {
+                _wallBar ??= new WallBar(this);
+                _wallBar.Show();
+                _wallBar.BringToFront();
+            }
+            else
+            {
+                _wallBar?.Hide();
+            }
+        }
+        catch (Exception ex) { Diag.Error("WALLBAR", ex); }
     }
 
     public void ExitWallpaper()
     {
         if (!St.Wallpaper) return;
         St.Wallpaper = false;
+        ShowWallBar(false);
+        if (_wallAttached)
+        {
+            DesktopHost.Detach(Handle, _wallSavedBounds.Width > 200 ? _wallSavedBounds : Bounds, _wallSavedTopMost);
+            _wallAttached = false;
+        }
         ShowInTaskbar = true;
         if (_wallSavedBounds.Width > 200) Bounds = _wallSavedBounds;
         TopMost = _wallSavedTopMost;
@@ -429,6 +474,13 @@ internal sealed class AppForm : Form
         AddTape("已退出桌面壁纸模式", Theme.TextFade);
         if (_trayWallpaper != null) _trayWallpaper.Checked = false;
         Invalidate();
+    }
+
+    /// <summary>从悬浮条进设置：先退出壁纸再打开设置面板。</summary>
+    public void ExitWallpaperToSettings()
+    {
+        ExitWallpaper();
+        if (!_settingsOpen) ToggleSettings();
     }
 
     private void SendToBottom()
@@ -809,7 +861,8 @@ internal sealed class AppForm : Form
     // ── UI 心跳 ───────────────────────────────────────────
     private void OnUiTick(object sender, EventArgs e)
     {
-        bool onScreen = Visible && WindowState != FormWindowState.Minimized;
+        // 壁纸模式下窗口是桌面的子窗口，Visible 可能为 false，但仍需持续绘制
+        bool onScreen = St.Wallpaper || (Visible && WindowState != FormWindowState.Minimized);
         if (onScreen == _hiddenMode)
         {
             _hiddenMode = !onScreen;
@@ -877,7 +930,12 @@ internal sealed class AppForm : Form
         if (_chart.Advance()) MarkDirty(_chart);
         if (_proc.Advance()) MarkDirty(_proc);
 
-        if (St.Wallpaper && Environment.TickCount64 - _lastBottomAt > 2000) SendToBottom();
+        if (St.Wallpaper && Environment.TickCount64 - _lastBottomAt > 2000)
+        {
+            _lastBottomAt = Environment.TickCount64;
+            if (_wallAttached) DesktopHost.Reassert(Handle);
+            else SendToBottom();
+        }
 
         MarkDirty(_footer);
         if (_tickCount % 20 == 0) MarkDirty(_title);
