@@ -25,20 +25,23 @@ internal sealed class Hardware
     public string OsName = "Windows";
     public string OsBuild = "";
     public string Arch = "";
+    public string DotNet = ".NET";
 
     // 营收基准权重
     public double Wcpu = 1, Wgpu = 1, Wmem = 1, Wdisk = 1, Wnet = 1;
 
     public string CpuLine => $"{CpuName} · {(PhysicalCores > 0 ? $"{PhysicalCores}C/{LogicalCores}T" : $"{LogicalCores}T")} · {BaseMhz / 1000.0:0.0}GHz{(MaxMhz > BaseMhz + 50 ? $" (睿频 {MaxMhz / 1000.0:0.0}GHz)" : "")}";
 
+    public string GpuDriver = "";
+
     public string GpuLine => HasGpu
-        ? $"{GpuName}{(GpuMemGB > 0 ? $" · {GpuMemGB:0.#}GB" : "")}"
+        ? $"{GpuName}{(GpuMemGB > 0 ? $" · {GpuMemGB:0.#}GB" : "")}{(GpuDriver.Length > 0 ? $" · 驱动 {GpuDriver}" : "")}"
         : $"{GpuName} · 未检测到独显";
 
     public string MemLine => $"{MemTotalGB:0.#}GB 内存 · 固定磁盘 ×{FixedDisks}" +
                              (NetMaxGbps > 0 ? $" · 网络 {NetMaxGbps:0.#}Gbps" : "");
 
-    public string OsLine => $"{OsName} {OsBuild} · {Arch} · .NET {Environment.Version}";
+    public string OsLine => $"{OsName} · Build {OsBuild} · {Arch} · {DotNet}";
 
     public string WeightLine =>
         $"CPU ×{Wcpu:0.00} ｜ GPU ×{Wgpu:0.00} ｜ 内存 ×{Wmem:0.00} ｜ 磁盘 ×{Wdisk:0.00} ｜ 网络 ×{Wnet:0.00}";
@@ -51,7 +54,7 @@ internal sealed class Hardware
         LogicalCores = Math.Max(1, Environment.ProcessorCount);
         PhysicalCores = CountPhysicalCores();
         if (PhysicalCores <= 0 || PhysicalCores > LogicalCores) PhysicalCores = LogicalCores;
-        CpuName = string.IsNullOrWhiteSpace(snap.CpuName) ? "处理器" : snap.CpuName;
+        CpuName = string.IsNullOrWhiteSpace(snap.CpuName) ? "处理器" : System.Text.RegularExpressions.Regex.Replace(snap.CpuName.Trim(), @"\s{2,}", " ");
         BaseMhz = ReadRegistryMhz();
         MaxMhz = Math.Max(BaseMhz, snap.CpuPeakMHz);
         if (BaseMhz <= 0) BaseMhz = snap.CpuPeakMHz;
@@ -99,22 +102,64 @@ internal sealed class Hardware
         return 0;
     }
 
+    private static string EditionCn(string edition)
+    {
+        if (string.IsNullOrWhiteSpace(edition)) return "";
+        string e = edition.Trim();
+        if (e.Contains("Workstations")) return "专业工作站版";
+        if (e.Contains("Enterprise LTSC") || e.Contains("EnterpriseS")) return "企业版 LTSC";
+        if (e.Contains("Enterprise")) return "企业版";
+        if (e.Contains("Education")) return "教育版";
+        if (e.Contains("Single Language")) return "家庭单语言版";
+        if (e.Contains("Home")) return "家庭版";
+        if (e.Contains("Pro")) return "专业版";
+        if (e.Contains("Server")) return "Server";
+        return e;
+    }
+
     private void ReadOs()
     {
+        // 真实版本号：Environment.OSVersion 内部走 RtlGetVersion，比注册表 ProductName 可靠
+        Version v = Environment.OSVersion.Version;
+        int build = v.Build;
+        int ubr = 0;
+        string display = "";
+        string edition = "";
         try
         {
             using var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
-            string product = k?.GetValue("ProductName") as string ?? "Windows";
-            string display = k?.GetValue("DisplayVersion") as string ?? "";
-            string build = k?.GetValue("CurrentBuild") as string ?? Environment.OSVersion.Version.Build.ToString();
-            string ubr = k?.GetValue("UBR")?.ToString() ?? "";
-            OsName = product.Replace("Microsoft ", "").Replace("Windows 10", "Windows 11");
-            if (!string.IsNullOrEmpty(display)) OsName += " " + display;
-            OsBuild = string.IsNullOrEmpty(ubr) ? build : $"{build}.{ubr}";
+            if (k != null)
+            {
+                if (int.TryParse(k.GetValue("UBR")?.ToString(), out int u) && u > 0) ubr = u;
+                display = k.GetValue("DisplayVersion") as string ?? "";
+                string product = k.GetValue("ProductName") as string ?? "";
+                // "Windows 10 Pro" -> "Pro" / "Windows 11 Enterprise" -> "Enterprise"
+                int idx = product.IndexOf("Windows 1", StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    int sp = product.IndexOf(' ', idx + 9);
+                    if (sp > 0) edition = product[(sp + 1)..].Trim();
+                }
+                if (string.IsNullOrEmpty(edition)) edition = product;
+            }
         }
-        catch { OsBuild = Environment.OSVersion.Version.ToString(); }
-        Arch = Environment.Is64BitProcess ? "x64" : "x86";
-        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64) Arch = "arm64";
+        catch { }
+
+        bool win11 = build >= 22000;
+        OsName = (win11 ? "Windows 11" : "Windows 10");
+        string ed = EditionCn(edition);
+        if (!string.IsNullOrEmpty(ed) && !OsName.Contains(ed)) OsName += " " + ed;
+        if (!string.IsNullOrWhiteSpace(display) && display.Length <= 6) OsName += " " + display.Trim();
+        OsBuild = ubr > 0 ? $"{build}.{ubr}" : build.ToString();
+
+        Arch = RuntimeInformation.OSArchitecture switch
+        {
+            Architecture.X64 => "x64",
+            Architecture.Arm64 => "arm64",
+            Architecture.X86 => "x86",
+            _ => RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()
+        };
+        DotNet = RuntimeInformation.FrameworkDescription.Replace(".NET ", ".NET ");
     }
 
     /// <summary>用 GetLogicalProcessorInformationEx 数物理核心。</summary>

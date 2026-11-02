@@ -36,3 +36,7 @@ Thumbs.db
 video/*.ps1
 video/package*.json
 
+
+# 临时验收截图
+/v9_*.png
+

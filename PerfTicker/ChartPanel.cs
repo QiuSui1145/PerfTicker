@@ -255,7 +255,6 @@ internal sealed class ChartPanel : Panel
         using var penDown = new Pen(Theme.Down, Math.Max(1f, Theme.S));
         using var brushUp = new SolidBrush(Theme.Up);
         using var brushDown = new SolidBrush(Theme.Down);
-        using var brushBg = new SolidBrush(Theme.ChartBg);
 
         for (int i = 0; i < bars; i++)
         {
@@ -266,29 +265,19 @@ internal sealed class ChartPanel : Panel
             double l2 = isLast ? _lcL : c.L;
             double cc = isLast ? _lcC : c.C;
 
-            float cx = _plot.X + (_x0 + (i + 0.5f) * slot) * Theme.S;
+            float cx = MathF.Round(_plot.X + (_x0 + (i + 0.5f) * slot) * Theme.S);
             bool up = cc >= o;
-            float yh = Py(h2), yl = Py(l2), yo = Py(o), yc = Py(cc);
+            float yh = MathF.Round(Py(h2)), yl = MathF.Round(Py(l2));
+            float yo = MathF.Round(Py(o)), yc = MathF.Round(Py(cc));
 
-            g.DrawLine(up ? penUp : penDown, cx, yh, cx, yl);
+            if (MathF.Abs(yl - yh) >= 1f) g.DrawLine(up ? penUp : penDown, cx, yh, cx, yl);
 
-            float top = Math.Min(yo, yc);
-            float bh = Math.Max(1f, Math.Abs(yc - yo));
-            var body = new RectangleF(cx - bodyW * Theme.S / 2, top, bodyW * Theme.S, bh);
-
-            if (bodyW < 3.6f)
-            {
-                g.FillRectangle(up ? brushUp : brushDown, body);
-            }
-            else if (up)
-            {
-                g.FillRectangle(brushBg, body);
-                g.DrawRectangle(penUp, body.X, body.Y, Math.Max(1f, body.Width), bh);
-            }
-            else
-            {
-                g.FillRectangle(brushDown, body);
-            }
+            // 统一实心蜡烛：上涨红色实心、下跌绿色实心，像素对齐更清晰
+            float bw = MathF.Max(1f, MathF.Round(bodyW * Theme.S));
+            float top = MathF.Round(MathF.Min(yo, yc));
+            float bh = MathF.Max(1f, MathF.Round(MathF.Abs(yc - yo)));
+            var body = new RectangleF(MathF.Round(cx - bw / 2f), top, bw, bh);
+            g.FillRectangle(up ? brushUp : brushDown, body);
         }
 
         // 均线

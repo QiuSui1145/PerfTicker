@@ -324,12 +324,31 @@ internal sealed class AppForm : Form
 
     public bool SettingsOpen => _settingsOpen;
 
+    private AboutForm _about;
+
     public void ShowAbout()
     {
         try
         {
-            using var f = new AboutForm(Hw);
-            f.ShowDialog(this);
+            if (_about != null && !_about.IsDisposed)
+            {
+                _about.Activate();
+                _about.BringToFront();
+                Invalidate();
+                return;
+            }
+            // 关键：主窗置顶时，关于窗必须同样置顶，否则会被压在下面；
+            // 同时用非模态 Show，避免「关不掉又卡死主窗」的死锁。
+            _about = new AboutForm(Hw)
+            {
+                TopMost = TopMost,
+                StartPosition = FormStartPosition.CenterParent,
+            };
+            _about.FormClosed += (s, e) => { _about = null; Invalidate(); };
+            _about.Show(this);
+            _about.BringToFront();
+            _about.Activate();
+            Invalidate();
         }
         catch (Exception ex) { Log("ABOUT FAIL " + ex); }
     }
@@ -728,6 +747,7 @@ internal sealed class AppForm : Form
         if (!_hwProbed && s.Procs.Count > 0)
         {
             _hwProbed = true;
+            Hw.GpuDriver = _sampler.GpuDriverVersion;
             Hw.Probe(s, s.Gpu);
             St.Economy.ApplyWeights(Hw);
             AddTape($"硬件探测完成 · {Hw.LogicalCores} 线程 / {Hw.MemTotalGB:0}G 内存 / {(Hw.HasGpu ? Hw.GpuMemGB.ToString("0.#") + "G 显存" : "无独显")}", Theme.Blue);

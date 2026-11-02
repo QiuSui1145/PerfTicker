@@ -268,6 +268,7 @@ internal sealed class GpuProbe : IDisposable
     private delegate int NvMem(IntPtr dev, ref NvMemory m);
     private delegate int NvU32(IntPtr dev, ref uint value);
     private delegate int NvTemp(IntPtr dev, uint sensor, ref uint value);
+    private delegate int NvDriver(StringBuilder name, uint len);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NvUtilization { public uint Gpu; public uint Memory; }
@@ -285,6 +286,7 @@ internal sealed class GpuProbe : IDisposable
     private NvTemp _temp;
     private bool _init;
     private string _name = "图形处理器";
+    public string DriverVersion { get; private set; } = "";
     public bool Available => _init && _dev != IntPtr.Zero;
 
     public void Init()
@@ -311,6 +313,12 @@ internal sealed class GpuProbe : IDisposable
             {
                 var sb = new StringBuilder(96);
                 if (getName(_dev, sb, 96) == 0) _name = sb.ToString().Trim();
+            }
+            var drv = Load<NvDriver>("nvmlSystemGetDriverVersion");
+            if (drv != null)
+            {
+                var sb2 = new StringBuilder(64);
+                if (drv(sb2, 64) == 0) DriverVersion = sb2.ToString().Trim();
             }
             _init = true;
         }
@@ -494,6 +502,7 @@ internal sealed class Sampler : IDisposable
 
     public int Cores { get; }
     public string CpuName => _cpu.Name;
+    public string GpuDriverVersion => _gpu.DriverVersion;
 
     public Sampler()
     {
