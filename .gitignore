@@ -40,3 +40,10 @@ video/package*.json
 # 临时验收截图
 /v9_*.png
 
+
+/_t.png
+/wall_key.png
+/desktop_layer.png
+/shot_*.png
+/wallbar.png
+

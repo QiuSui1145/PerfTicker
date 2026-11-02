@@ -44,6 +44,19 @@ internal static class Native
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr h, int idx);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr h, int idx, int val);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetLayeredWindowAttributes(IntPtr h, uint colorKey, byte alpha, uint flags);
+
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_LAYERED = 0x00080000;
+    public const uint LWA_COLORKEY = 0x00000001;
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;

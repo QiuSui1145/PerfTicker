@@ -37,6 +37,9 @@ internal sealed class AppForm : Form
     private ToolStripMenuItem _trayWallpaper;
     private WallBar _wallBar;
     private bool _wallAttached;
+    /// <summary>壁纸模式下的透明留边（露出桌面/图标）。</summary>
+    private int WallInset => Theme.Px(26);
+    private static readonly Color WallKey = Color.FromArgb(255, 0, 255);
     private bool _trayOk;
     private bool _reallyExit;
     private bool _settingsOpen;
@@ -93,7 +96,7 @@ internal sealed class AppForm : Form
     private void FlushDirty()
     {
         long now = Environment.TickCount64;
-        int budget = St.Wallpaper ? 90 : 36;   // 壁纸模式降帧省电（~11fps）
+        int budget = St.Wallpaper ? 140 : 36;   // 壁纸模式降帧省电（~7fps）
         if (now - _lastPaintAt < budget || _due.Count == 0) return;
 
         Panel best = null;
@@ -412,32 +415,42 @@ internal sealed class AppForm : Form
         ShowInTaskbar = false;
         if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
 
-        // 真·壁纸：挂到桌面 WorkerW（位于图标之下），桌面图标与右键菜单都归桌面
         var scr = Screen.FromControl(this).Bounds;
         Bounds = scr;
+        ApplyWallLayered(true);
         LayoutPanels();
-        _wallAttached = DesktopHost.Attach(Handle, out string detail);
-        if (!_wallAttached)
-        {
-            // 退回：置底窗口 + 点击穿透
-            SendToBottom();
-        }
-
+        SendToBottom();
         ShowWallBar(true);
-        Invalidate();
-        Update();
 
         if (persist)
         {
             SaveSettings();
-            AddTape(_wallAttached
-                ? "已切换为桌面壁纸 · " + detail + " · 图标与右键归桌面，操作用悬浮控制条"
-                : "已切换为壁纸（兼容模式） · " + detail + " · 仅控件可点", Theme.Cyan);
+            AddTape("桌面壁纸模式 · 面板外的区域透明且点击穿透，桌面图标/右键归桌面", Theme.Cyan);
         }
         if (_trayWallpaper != null) _trayWallpaper.Checked = true;
         Invalidate();
     }
 
+    private void ApplyWallLayered(bool on)
+    {
+        try
+        {
+            int ex = Native.GetWindowLong(Handle, Native.GWL_EXSTYLE);
+            if (on)
+            {
+                Native.SetWindowLong(Handle, Native.GWL_EXSTYLE, ex | Native.WS_EX_LAYERED);
+                uint key = (uint)(WallKey.R | (WallKey.G << 8) | (WallKey.B << 16));
+                Native.SetLayeredWindowAttributes(Handle, key, 255, Native.LWA_COLORKEY);
+                BackColor = WallKey;
+            }
+            else
+            {
+                Native.SetWindowLong(Handle, Native.GWL_EXSTYLE, ex & ~Native.WS_EX_LAYERED);
+                BackColor = Theme.Bg;
+            }
+        }
+        catch (Exception ex2) { Diag.Error("WALL-LAYER", ex2); }
+    }
     private void ShowWallBar(bool show)
     {
         try
@@ -461,11 +474,7 @@ internal sealed class AppForm : Form
         if (!St.Wallpaper) return;
         St.Wallpaper = false;
         ShowWallBar(false);
-        if (_wallAttached)
-        {
-            DesktopHost.Detach(Handle, _wallSavedBounds.Width > 200 ? _wallSavedBounds : Bounds, _wallSavedTopMost);
-            _wallAttached = false;
-        }
+        ApplyWallLayered(false);
         ShowInTaskbar = true;
         if (_wallSavedBounds.Width > 200) Bounds = _wallSavedBounds;
         TopMost = _wallSavedTopMost;
@@ -551,6 +560,8 @@ internal sealed class AppForm : Form
     private void LayoutPanels()
     {
         int W = ClientSize.Width, H = ClientSize.Height;
+        int inset = St.Wallpaper ? WallInset : 0;
+        if (inset > 0) { W -= inset * 2; H -= inset * 2; }
         int titleH = Theme.Px(42), indexH = Theme.Px(58), footerH = Theme.Px(28);
         int bottomH = Math.Clamp((int)(H * 0.238), Theme.Px(200), Theme.Px(300));
         int leftW = Theme.Px(298);
@@ -583,6 +594,15 @@ internal sealed class AppForm : Form
             ? new Rectangle(leftW, bottomTop - ecoH, centerW, ecoH)
             : Rectangle.Empty;
 
+        if (inset > 0)
+        {
+            foreach (var p in _panels)
+            {
+                var b = p.Bounds;
+                if (b.Width <= 0) continue;
+                p.Bounds = new Rectangle(b.X + inset, b.Y + inset, b.Width, b.Height);
+            }
+        }
     }
 
     protected override void OnResize(EventArgs e)
@@ -608,6 +628,11 @@ internal sealed class AppForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        if (St.Wallpaper)
+        {
+            // 整屏先涂色键（透明），面板再盖上去 → 面板外露出桌面且点击穿透
+            using (var kb = new SolidBrush(WallKey)) g.FillRectangle(kb, ClientRectangle);
+        }
         g.SmoothingMode = SmoothingMode.None;
         g.PixelOffsetMode = PixelOffsetMode.Half;
         g.CompositingQuality = CompositingQuality.HighSpeed;
