@@ -10,6 +10,8 @@ internal sealed class EconomyPanel : Panel
 
     public override Cursor CursorAt(Point p) => _resetRect.Contains(Local(p)) ? Cursors.Hand : Cursors.Default;
 
+    public override bool HitInteractive(Point p) => _resetRect.Contains(Local(p));
+
     public override void MouseMove(Point p)
     {
         bool h = _resetRect.Contains(Local(p));

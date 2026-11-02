@@ -15,6 +15,8 @@ internal abstract class Panel
     public virtual bool Click(Point p, MouseButtons b) => false;
     public virtual void RightClick(Point p) { }
     public virtual bool Advance() => false;
+    /// <summary>壁纸模式下：该点是否落在可交互控件上（否则点击穿透到桌面）。</summary>
+    public virtual bool HitInteractive(Point p) => false;
     public virtual void Wheel(Point p, int delta) { }
     public virtual void DoubleClick(Point p) { }
     public virtual Cursor CursorAt(Point p) => Cursors.Default;
@@ -62,7 +64,7 @@ internal abstract class Panel
 /// <summary>顶部标题栏：品牌、状态、采样设置、时钟与窗口按钮。</summary>
 internal sealed class TitleBarPanel : Panel
 {
-    public Rectangle BtnMin, BtnMax, BtnClose, Clock, ChipPause, ChipTop, ChipColor, ChipEco, Pill, Gear;
+    public Rectangle BtnMin, BtnMax, BtnClose, Clock, ChipPause, ChipTop, ChipColor, ChipEco, ChipWall, Pill, Gear;
     public Rectangle[] Segs = new Rectangle[5];
     public string[] SegLabels = { "0.5s", "1s", "2s", "5s", "10s" };
     public int[] SegValues = { 500, 1000, 2000, 5000, 10000 };
@@ -73,14 +75,24 @@ internal sealed class TitleBarPanel : Panel
     {
         float w = LogicalW, h = LogicalH;
         float bw = 46;
-        BtnClose = Rc(w - bw, 0, bw, h);
-        BtnMax = Rc(w - 2 * bw, 0, bw, h);
-        BtnMin = Rc(w - 3 * bw, 0, bw, h);
-        Clock = Rc(w - 3 * bw - 104, 0, 100, h);
+        if (St.Wallpaper)
+        {
+            // 壁纸模式：隐藏最小化/最大化/关闭
+            BtnClose = BtnMax = BtnMin = Rectangle.Empty;
+            Clock = Rc(w - 104, 0, 100, h);
+        }
+        else
+        {
+            BtnClose = Rc(w - bw, 0, bw, h);
+            BtnMax = Rc(w - 2 * bw, 0, bw, h);
+            BtnMin = Rc(w - 3 * bw, 0, bw, h);
+            Clock = Rc(w - 3 * bw - 104, 0, 100, h);
+        }
 
-        float x = w - 3 * bw - 116;
+        float x = St.Wallpaper ? w - 116 : w - 3 * bw - 116;
         ChipColor = Rc(x - 58, 10, 58, 23); x -= 66;
-        ChipTop = Rc(x - 50, 10, 50, 23); x -= 58;
+        if (St.Wallpaper) { ChipTop = Rectangle.Empty; } else { ChipTop = Rc(x - 50, 10, 50, 23); x -= 58; }
+        ChipWall = Rc(x - 56, 10, 56, 23); x -= 64;
         ChipPause = Rc(x - 62, 10, 62, 23); x -= 70;
         ChipEco = Rc(x - 52, 10, 52, 23); x -= 60;
         for (int i = Segs.Length - 1; i >= 0; i--)
@@ -182,7 +194,8 @@ internal sealed class TitleBarPanel : Panel
 
         // ── 功能 chips ──
         Chip(g, ChipPause, St.Paused ? "继续" : "暂停", St.Paused, _hover == 3, Theme.Gold);
-        Chip(g, ChipTop, "置顶", St.TopMost, _hover == 4, Theme.Blue);
+        if (!St.Wallpaper) Chip(g, ChipTop, "置顶", St.TopMost, _hover == 4, Theme.Blue);
+        Chip(g, ChipWall, "壁纸", St.Wallpaper, _hover == 8, Theme.Cyan);
         Chip(g, ChipColor, St.RedUp ? "红涨" : "绿涨", true, _hover == 5, St.RedUp ? Theme.Up : Theme.Down);
         Chip(g, ChipEco, "营收", St.Economy.Enabled, _hover == 6, Theme.Gold);
 
@@ -191,10 +204,13 @@ internal sealed class TitleBarPanel : Panel
         Theme.Text(g, now.ToString("HH:mm:ss"), Theme.NumXL, Theme.GoldSoft, new Rectangle(Clock.X, Clock.Y + P(2), Clock.Width, P(20)), Theme.AR);
         Theme.Text(g, now.ToString("yyyy-MM-dd ddd"), Theme.UiXS, Theme.TextFade, new Rectangle(Clock.X, Clock.Y + P(21), Clock.Width, P(14)), Theme.AR);
 
-        // ── 窗口按钮 ──
-        DrawWinBtn(g, BtnMin, 0, _hover == 0);
-        DrawWinBtn(g, BtnMax, 1, _hover == 1);
-        DrawWinBtn(g, BtnClose, 2, _hover == 2);
+        // ── 窗口按钮（壁纸模式隐藏）──
+        if (!St.Wallpaper)
+        {
+            DrawWinBtn(g, BtnMin, 0, _hover == 0);
+            DrawWinBtn(g, BtnMax, 1, _hover == 1);
+            DrawWinBtn(g, BtnClose, 2, _hover == 2);
+        }
 
         End(g);
     }
@@ -245,6 +261,7 @@ internal sealed class TitleBarPanel : Panel
         else if (ChipColor.Contains(l)) h = 5;
         else if (ChipEco.Contains(l)) h = 6;
         else if (Gear.Contains(l)) h = 7;
+        else if (ChipWall.Contains(l)) h = 8;
         else
         {
             for (int i = 0; i < Segs.Length; i++) if (Segs[i].Contains(l)) seg = i;
@@ -270,6 +287,16 @@ internal sealed class TitleBarPanel : Panel
     public override Cursor CursorAt(Point p)
         => _hover >= 0 || _hoverSeg >= 0 ? Cursors.Hand : Cursors.Default;
 
+    public override bool HitInteractive(Point clientPoint)
+    {
+        var l = Local(clientPoint);
+        if (ChipPause.Contains(l) || ChipTop.Contains(l) || ChipColor.Contains(l) ||
+            ChipEco.Contains(l) || ChipWall.Contains(l) || Gear.Contains(l)) return true;
+        for (int i = 0; i < Segs.Length; i++) if (Segs[i].Contains(l)) return true;
+        if (!St.Wallpaper && (BtnMin.Contains(l) || BtnMax.Contains(l) || BtnClose.Contains(l))) return true;
+        return false;
+    }
+
     /// <summary>该点是否落在可交互控件上（用于决定标题栏能否作为拖拽区域）。</summary>
     public bool IsInteractive(Point clientPoint)
     {
@@ -277,7 +304,7 @@ internal sealed class TitleBarPanel : Panel
         var lg = new Point((int)(l.X / Theme.S), (int)(l.Y / Theme.S));
         bool Hit(Rectangle r) => r.Contains(l) || r.Contains(lg);
         if (Hit(BtnMin) || Hit(BtnMax) || Hit(BtnClose)) return true;
-        if (Hit(ChipPause) || Hit(ChipTop) || Hit(ChipColor) || Hit(ChipEco) || Hit(Gear)) return true;
+        if (Hit(ChipPause) || Hit(ChipTop) || Hit(ChipColor) || Hit(ChipEco) || Hit(ChipWall) || Hit(Gear)) return true;
         for (int i = 0; i < Segs.Length; i++) if (Hit(Segs[i])) return true;
         return false;
     }
@@ -293,10 +320,11 @@ internal sealed class TitleBarPanel : Panel
             return true;
         }
         if (ChipPause.Contains(l)) { F.TogglePause(); return true; }
-        if (ChipTop.Contains(l)) { F.ToggleTopMost(); return true; }
+        if (!St.Wallpaper && ChipTop.Contains(l)) { F.ToggleTopMost(); return true; }
         if (ChipColor.Contains(l)) { F.ToggleColor(); return true; }
         if (ChipEco.Contains(l)) { F.ToggleEconomy(); return true; }
         if (Gear.Contains(l)) { F.ToggleSettings(); return true; }
+        if (ChipWall.Contains(l)) { F.ToggleWallpaper(); return true; }
         for (int i = 0; i < Segs.Length; i++)
             if (Segs[i].Contains(l)) { F.SetInterval(SegValues[i]); return true; }
         return false;
@@ -370,6 +398,13 @@ internal sealed class IndexStripPanel : Panel
     }
 
     public override Cursor CursorAt(Point p) => _hover >= 0 ? Cursors.Hand : Cursors.Default;
+
+    public override bool HitInteractive(Point p)
+    {
+        var l = Local(p);
+        for (int i = 0; i < Codes.Length; i++) if (CellRect(i).Contains(l)) return true;
+        return false;
+    }
 
     public override bool Click(Point p, MouseButtons b)
     {
@@ -560,6 +595,8 @@ internal sealed class WatchPanel : Panel
 
     public override Cursor CursorAt(Point p) => _hoverRow >= 0 ? Cursors.Hand : Cursors.Default;
 
+    public override bool HitInteractive(Point p) => RowAtLocal(Local(p), out _) >= 0;
+
     public override bool Click(Point p, MouseButtons b)
     {
         int idx = RowAtLocal(Local(p), out _);
@@ -680,6 +717,13 @@ internal sealed class InstrumentPanel : Panel
     }
 
     public override Cursor CursorAt(Point p) => _hover >= 0 ? Cursors.Hand : Cursors.Default;
+
+    public override bool HitInteractive(Point p)
+    {
+        var l = Local(p);
+        for (int i = 0; i < 5; i++) if (Tabs[i].Contains(l)) return true;
+        return false;
+    }
 
     public override bool Click(Point p, MouseButtons b)
     {

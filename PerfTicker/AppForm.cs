@@ -34,6 +34,7 @@ internal sealed class AppForm : Form
     private double _lastDataFrame;
     private Settings _settings;
     private NotifyIcon _notify;
+    private ToolStripMenuItem _trayWallpaper;
     private bool _trayOk;
     private bool _reallyExit;
     private bool _settingsOpen;
@@ -41,6 +42,9 @@ internal sealed class AppForm : Form
     private Rectangle _setPanel, _setAuto, _setMarquee, _setThemeDark, _setThemeLight, _setThemeAuto, _setLog;
     private double _ecoLastSave;
     private bool _hwProbed;
+    private Rectangle _wallSavedBounds;
+    private bool _wallSavedTopMost;
+    private long _lastBottomAt;
     private readonly List<(string text, Color color, Action action)> _menuItems = new();
     private Rectangle _menuRect;
     private int _menuHover = -1;
@@ -107,6 +111,7 @@ internal sealed class AppForm : Form
     private bool _hiddenMode;
 
     private const int WM_NCHITTEST = 0x0084;
+    private const int WM_MOUSEACTIVATE = 0x0021;
     private const int WM_GETMINMAXINFO = 0x0024;
     private const int HTCLIENT = 1, HTCAPTION = 2;
 
@@ -209,6 +214,7 @@ internal sealed class AppForm : Form
 
         LayoutPanels();
         if (_settings.Maximized) WindowState = FormWindowState.Maximized;
+        if (_settings.Wallpaper) EnterWallpaper(false);
 
         InitTray();
         if (!string.IsNullOrEmpty(cfgWarning)) AddTape("配置提示 · " + cfgWarning, Theme.Warn);
@@ -259,6 +265,7 @@ internal sealed class AppForm : Form
             _settings.RedUp = St.RedUp;
             _settings.TopMost = St.TopMost;
             _settings.EconomyOn = St.Economy.Enabled;
+            _settings.Wallpaper = St.Wallpaper;
             _settings.Marquee = St.Marquee;
             _settings.EcoTotal = St.Economy.Total;
             _settings.EcoPeak = St.Economy.PeakRate;
@@ -345,6 +352,9 @@ internal sealed class AppForm : Form
             var menu = new ContextMenuStrip { ShowImageMargin = false };
             menu.Items.Add("打开主窗口", null, (s, e) => RestoreFromTray());
             menu.Items.Add("营收归零", null, (s, e) => { St.Economy.Reset(); SaveSettings(); Invalidate(); });
+            _trayWallpaper = new ToolStripMenuItem("桌面壁纸") { CheckOnClick = false, Checked = _settings.Wallpaper };
+            _trayWallpaper.Click += (s, e) => ToggleWallpaper();
+            menu.Items.Add(_trayWallpaper);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出", null, (s, e) => ExitApp());
             _notify.ContextMenuStrip = menu;
@@ -380,6 +390,56 @@ internal sealed class AppForm : Form
         SaveSettings();
         try { if (_notify != null) { _notify.Visible = false; } } catch { }
         Close();
+    }
+
+    public void ToggleWallpaper()
+    {
+        if (St.Wallpaper) ExitWallpaper();
+        else EnterWallpaper(true);
+    }
+
+    /// <summary>进入「桌面壁纸」：铺满屏幕、压到最底层、点击穿透到桌面，仅控件可交互。</summary>
+    public void EnterWallpaper(bool persist)
+    {
+        if (St.Wallpaper) return;
+        _wallSavedBounds = Bounds;
+        _wallSavedTopMost = TopMost;
+        St.Wallpaper = true;
+        TopMost = false;
+        ShowInTaskbar = false;
+        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+        var scr = Screen.FromControl(this).Bounds;
+        Bounds = scr;
+        LayoutPanels();
+        SendToBottom();
+        if (persist) { SaveSettings(); AddTape("已切换为桌面壁纸 · 仅控件可点，其余点击穿透", Theme.Cyan); }
+        if (_trayWallpaper != null) _trayWallpaper.Checked = true;
+        Invalidate();
+    }
+
+    public void ExitWallpaper()
+    {
+        if (!St.Wallpaper) return;
+        St.Wallpaper = false;
+        ShowInTaskbar = true;
+        if (_wallSavedBounds.Width > 200) Bounds = _wallSavedBounds;
+        TopMost = _wallSavedTopMost;
+        LayoutPanels();
+        SaveSettings();
+        AddTape("已退出桌面壁纸模式", Theme.TextFade);
+        if (_trayWallpaper != null) _trayWallpaper.Checked = false;
+        Invalidate();
+    }
+
+    private void SendToBottom()
+    {
+        try
+        {
+            Native.SetWindowPos(Handle, Native.HWND_BOTTOM, 0, 0, 0, 0,
+                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_NOOWNERZORDER);
+            _lastBottomAt = Environment.TickCount64;
+        }
+        catch { }
     }
 
     public bool SettingsOpen => _settingsOpen;
@@ -816,6 +876,8 @@ internal sealed class AppForm : Form
 
         if (_chart.Advance()) MarkDirty(_chart);
         if (_proc.Advance()) MarkDirty(_proc);
+
+        if (St.Wallpaper && Environment.TickCount64 - _lastBottomAt > 2000) SendToBottom();
 
         MarkDirty(_footer);
         if (_tickCount % 20 == 0) MarkDirty(_title);
@@ -1254,6 +1316,12 @@ internal sealed class AppForm : Form
             return;
         }
 
+        if (m.Msg == WM_MOUSEACTIVATE && St.Wallpaper)
+        {
+            m.Result = (IntPtr)3;   // MA_NOACTIVATE：不进前台、不打乱桌面焦点
+            return;
+        }
+
         if (m.Msg == WM_NCHITTEST)
         {
             base.WndProc(ref m);
@@ -1263,7 +1331,22 @@ internal sealed class AppForm : Form
             int sy = (short)(((long)m.LParam >> 16) & 0xFFFF);
             var cp = PointToClient(new Point(sx, sy));
 
-            if (WindowState != FormWindowState.Maximized)
+            // 壁纸模式：只有真正的控件（按钮/行/页签）吃点击，其余穿透给桌面
+            if (St.Wallpaper)
+            {
+                foreach (var panel in _panels)
+                {
+                    if (panel.Bounds.Contains(cp) && panel.HitInteractive(cp))
+                    {
+                        m.Result = (IntPtr)HTCLIENT;
+                        return;
+                    }
+                }
+                m.Result = (IntPtr)(-1);   // HTTRANSPARENT：交给桌面（图标/右键菜单）
+                return;
+            }
+
+            if (!St.Wallpaper && WindowState != FormWindowState.Maximized)
             {
                 int edge = Theme.Px(6);
                 bool l = cp.X <= edge, r = cp.X >= ClientSize.Width - edge;
@@ -1280,7 +1363,7 @@ internal sealed class AppForm : Form
                 if (hit != 0) { m.Result = (IntPtr)hit; return; }
             }
 
-            if (_title != null && _title.Bounds.Contains(cp) && !_title.IsInteractive(cp))
+            if (!St.Wallpaper && _title != null && _title.Bounds.Contains(cp) && !_title.IsInteractive(cp))
             {
                 m.Result = (IntPtr)HTCAPTION;
             }

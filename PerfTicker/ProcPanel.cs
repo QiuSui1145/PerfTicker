@@ -286,6 +286,14 @@ internal sealed class ProcPanel : Panel
         }
     }
 
+    public override bool HitInteractive(Point p)
+    {
+        var l = Local(p);
+        if (_searchBox.Contains(l)) return true;
+        for (int i = 0; i < 4; i++) if (_sortChips[i].Contains(l)) return true;
+        return RowAtLocal(l) >= 0;
+    }
+
     public override Cursor CursorAt(Point p)
     {
         var l = Local(p);

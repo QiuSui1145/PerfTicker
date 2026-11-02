@@ -18,6 +18,7 @@ internal sealed class Settings
     public bool RedUp { get; set; } = true;
     public bool TopMost { get; set; }
     public bool EconomyOn { get; set; }
+    public bool Wallpaper { get; set; }
     public bool AutoStart { get; set; }
     public bool Marquee { get; set; } = true;
     public int ThemeMode { get; set; } = 1;      // 0=深色 1=浅色 2=跟随系统

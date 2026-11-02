@@ -316,6 +316,8 @@ internal sealed class FooterPanel : Panel
 
     public override Cursor CursorAt(Point p) => AboutRect.Contains(Local(p)) ? Cursors.Hand : Cursors.Default;
 
+    public override bool HitInteractive(Point p) => AboutRect.Contains(Local(p));
+
     public override bool Click(Point p, MouseButtons b)
     {
         if (!AboutRect.Contains(Local(p))) return false;
