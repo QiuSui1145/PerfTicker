@@ -75,23 +75,14 @@ internal sealed class TitleBarPanel : Panel
     {
         float w = LogicalW, h = LogicalH;
         float bw = 46;
-        if (St.Wallpaper)
-        {
-            // 壁纸模式：隐藏最小化/最大化/关闭
-            BtnClose = BtnMax = BtnMin = Rectangle.Empty;
-            Clock = Rc(w - 104, 0, 100, h);
-        }
-        else
-        {
-            BtnClose = Rc(w - bw, 0, bw, h);
-            BtnMax = Rc(w - 2 * bw, 0, bw, h);
-            BtnMin = Rc(w - 3 * bw, 0, bw, h);
-            Clock = Rc(w - 3 * bw - 104, 0, 100, h);
-        }
+        BtnClose = Rc(w - bw, 0, bw, h);
+        BtnMax = Rc(w - 2 * bw, 0, bw, h);
+        BtnMin = Rc(w - 3 * bw, 0, bw, h);
+        Clock = Rc(w - 3 * bw - 104, 0, 100, h);
 
-        float x = St.Wallpaper ? w - 116 : w - 3 * bw - 116;
+        float x = w - 3 * bw - 116;
         ChipColor = Rc(x - 58, 10, 58, 23); x -= 66;
-        if (St.Wallpaper) { ChipTop = Rectangle.Empty; } else { ChipTop = Rc(x - 50, 10, 50, 23); x -= 58; }
+        ChipTop = Rc(x - 50, 10, 50, 23); x -= 58;
         ChipWall = Rc(x - 56, 10, 56, 23); x -= 64;
         ChipPause = Rc(x - 62, 10, 62, 23); x -= 70;
         ChipEco = Rc(x - 52, 10, 52, 23); x -= 60;
@@ -194,8 +185,8 @@ internal sealed class TitleBarPanel : Panel
 
         // ── 功能 chips ──
         Chip(g, ChipPause, St.Paused ? "继续" : "暂停", St.Paused, _hover == 3, Theme.Gold);
-        if (!St.Wallpaper) Chip(g, ChipTop, "置顶", St.TopMost, _hover == 4, Theme.Blue);
-        Chip(g, ChipWall, "壁纸", St.Wallpaper, _hover == 8, Theme.Cyan);
+        Chip(g, ChipTop, "置顶", St.TopMost, _hover == 4, Theme.Blue);
+        Chip(g, ChipWall, "挂件", F.GadgetOn, _hover == 8, Theme.Cyan);
         Chip(g, ChipColor, St.RedUp ? "红涨" : "绿涨", true, _hover == 5, St.RedUp ? Theme.Up : Theme.Down);
         Chip(g, ChipEco, "营收", St.Economy.Enabled, _hover == 6, Theme.Gold);
 
@@ -204,13 +195,10 @@ internal sealed class TitleBarPanel : Panel
         Theme.Text(g, now.ToString("HH:mm:ss"), Theme.NumXL, Theme.GoldSoft, new Rectangle(Clock.X, Clock.Y + P(2), Clock.Width, P(20)), Theme.AR);
         Theme.Text(g, now.ToString("yyyy-MM-dd ddd"), Theme.UiXS, Theme.TextFade, new Rectangle(Clock.X, Clock.Y + P(21), Clock.Width, P(14)), Theme.AR);
 
-        // ── 窗口按钮（壁纸模式隐藏）──
-        if (!St.Wallpaper)
-        {
-            DrawWinBtn(g, BtnMin, 0, _hover == 0);
-            DrawWinBtn(g, BtnMax, 1, _hover == 1);
-            DrawWinBtn(g, BtnClose, 2, _hover == 2);
-        }
+        // ── 窗口按钮 ──
+        DrawWinBtn(g, BtnMin, 0, _hover == 0);
+        DrawWinBtn(g, BtnMax, 1, _hover == 1);
+        DrawWinBtn(g, BtnClose, 2, _hover == 2);
 
         End(g);
     }
@@ -293,7 +281,7 @@ internal sealed class TitleBarPanel : Panel
         if (ChipPause.Contains(l) || ChipTop.Contains(l) || ChipColor.Contains(l) ||
             ChipEco.Contains(l) || ChipWall.Contains(l) || Gear.Contains(l)) return true;
         for (int i = 0; i < Segs.Length; i++) if (Segs[i].Contains(l)) return true;
-        if (!St.Wallpaper && (BtnMin.Contains(l) || BtnMax.Contains(l) || BtnClose.Contains(l))) return true;
+        if (BtnMin.Contains(l) || BtnMax.Contains(l) || BtnClose.Contains(l)) return true;
         return false;
     }
 
@@ -320,11 +308,11 @@ internal sealed class TitleBarPanel : Panel
             return true;
         }
         if (ChipPause.Contains(l)) { F.TogglePause(); return true; }
-        if (!St.Wallpaper && ChipTop.Contains(l)) { F.ToggleTopMost(); return true; }
+        if (ChipTop.Contains(l)) { F.ToggleTopMost(); return true; }
         if (ChipColor.Contains(l)) { F.ToggleColor(); return true; }
         if (ChipEco.Contains(l)) { F.ToggleEconomy(); return true; }
         if (Gear.Contains(l)) { F.ToggleSettings(); return true; }
-        if (ChipWall.Contains(l)) { F.ToggleWallpaper(); return true; }
+        if (ChipWall.Contains(l)) { F.ToggleGadget(); return true; }
         for (int i = 0; i < Segs.Length; i++)
             if (Segs[i].Contains(l)) { F.SetInterval(SegValues[i]); return true; }
         return false;

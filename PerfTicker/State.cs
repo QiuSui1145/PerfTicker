@@ -45,7 +45,7 @@ internal sealed class AppState
     public bool TopMost;
     public bool RedUp = true;
     public bool Marquee = true;
-    public bool Wallpaper;
+
 
     public readonly List<TapeEvent> Tape = new(256);
     public readonly Dictionary<int, ProcHist> ProcHist = new(512);
