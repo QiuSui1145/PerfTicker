@@ -62,10 +62,10 @@ internal sealed class ChartPanel : Panel
         {
             double dMin = tMin - _drawMin, dMax = tMax - _drawMax;
             double span = Math.Max(1e-9, tMax - tMin);
-            if (Math.Abs(dMin) > span * 0.004 || Math.Abs(dMax) > span * 0.004)
+            if (Math.Abs(dMin) > span * 0.012 || Math.Abs(dMax) > span * 0.012)
             {
-                _drawMin += dMin * 0.38;
-                _drawMax += dMax * 0.38;
+                _drawMin += dMin * 0.5;
+                _drawMax += dMax * 0.5;
                 dirty = true;
             }
             else if (Math.Abs(dMin) > 1e-9 || Math.Abs(dMax) > 1e-9)
@@ -86,10 +86,10 @@ internal sealed class ChartPanel : Panel
         else
         {
             double dh = last.H - _lcH, dl = last.L - _lcL, dc = last.C - _lcC;
-            double eps = Math.Max(1e-9, (_drawMax - _drawMin) * 0.0015);
+            double eps = Math.Max(1e-9, (_drawMax - _drawMin) * 0.006);
             if (Math.Abs(dh) > eps || Math.Abs(dl) > eps || Math.Abs(dc) > eps)
             {
-                _lcH += dh * 0.45; _lcL += dl * 0.45; _lcC += dc * 0.45;
+                _lcH += dh * 0.55; _lcL += dl * 0.55; _lcC += dc * 0.55;
                 dirty = true;
             }
             else { _lcH = last.H; _lcL = last.L; _lcC = last.C; }
@@ -161,7 +161,9 @@ internal sealed class ChartPanel : Panel
 
         float Py(double v) => _plot.Bottom - (float)((v - yMin) / (yMax - yMin)) * _plot.Height;
 
-        // ── 网格 + 右侧坐标轴 ──
+        // ── 网格 + 右侧坐标轴（关抗锯齿提速）──
+        var sm = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.None;
         int rows = 4;
         for (int i = 0; i <= rows; i++)
         {
@@ -189,6 +191,7 @@ internal sealed class ChartPanel : Panel
 
         DrawCandles(g, m, candles, first, bars, slot, Py);
         DrawVolume(g, candles, first, bars, maxVol);
+        g.SmoothingMode = sm;   // 恢复抗锯齿给均线/文字
         DrawLegend(g, m, candles);
 
         // ── 最新价参考线 ──
@@ -280,7 +283,8 @@ internal sealed class ChartPanel : Panel
             g.FillRectangle(up ? brushUp : brushDown, body);
         }
 
-        // 均线
+        // 均线（单独开抗锯齿）
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         var conf = new[] { (5, Theme.Gold), (10, Theme.Purple), (20, Theme.Cyan) };
         foreach (var (n, col) in conf)
         {

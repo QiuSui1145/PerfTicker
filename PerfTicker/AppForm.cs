@@ -38,7 +38,7 @@ internal sealed class AppForm : Form
     private bool _reallyExit;
     private bool _settingsOpen;
     private int _settingsHover = -1;
-    private Rectangle _setPanel, _setAuto, _setMarquee, _setThemeDark, _setThemeLight, _setThemeAuto;
+    private Rectangle _setPanel, _setAuto, _setMarquee, _setThemeDark, _setThemeLight, _setThemeAuto, _setLog;
     private double _ecoLastSave;
     private bool _hwProbed;
     private readonly List<(string text, Color color, Action action)> _menuItems = new();
@@ -48,15 +48,69 @@ internal sealed class AppForm : Form
     private int _menuPid;
     private string _menuName = "";
 
+    private static readonly Dictionary<string, long> _panelTicks = new();
+    private static int _bigPaints, _smallPaints;
+    private readonly Dictionary<Panel, long> _due = new();
+    private long _lastPaintAt;
+
+    private static int IntervalFor(Panel p) => p switch
+    {
+        ChartPanel => 90,        // 11fps
+        IndexStripPanel => 100,  // 10fps
+        FooterPanel => 120,      // 8fps
+        InstrumentPanel => 130,  // 7.7fps
+        EconomyPanel => 400,
+        ProcPanel => 400,
+        WatchPanel => 420,       // 随数据刷新
+        BookPanel => 420,
+        TapePanel => 420,
+        _ => 1000,
+    };
+
+    private void MarkDirty(Panel p)
+    {
+        if (p == null || p.Bounds.Width <= 0) return;
+        if (!_due.ContainsKey(p)) _due[p] = Environment.TickCount64;
+    }
+
+    private void MarkAllDirty()
+    {
+        foreach (var p in _panels)
+        {
+            if (ReferenceEquals(p, _title)) continue;
+            if (ReferenceEquals(p, _econ) && !St.Economy.Enabled) continue;
+            MarkDirty(p);
+        }
+    }
+
+    /// <summary>按面板独立节拍重绘：每次只刷一个面板，避免合并成整窗重画。</summary>
+    private void FlushDirty()
+    {
+        long now = Environment.TickCount64;
+        if (now - _lastPaintAt < 36 || _due.Count == 0) return;   // 全局上限约 27fps
+
+        Panel best = null;
+        long bestDue = long.MaxValue;
+        foreach (var kv in _due)
+        {
+            if (kv.Value <= now && kv.Value < bestDue) { bestDue = kv.Value; best = kv.Key; }
+        }
+        if (best == null) return;
+
+        _due[best] = now + IntervalFor(best);
+        Invalidate(best.Bounds);
+    }
+    private static int _paintCount;
+    private double _lastPerfAt;
+
+    private uint _wakeMsg;
+    private bool _hiddenMode;
+
     private const int WM_NCHITTEST = 0x0084;
     private const int WM_GETMINMAXINFO = 0x0024;
     private const int HTCLIENT = 1, HTCAPTION = 2;
 
-    private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "perfticker.log");
-    internal static void Log(string s)
-    {
-        try { File.AppendAllText(LogPath, DateTime.Now.ToString("HH:mm:ss.fff") + "  " + s + Environment.NewLine); } catch { }
-    }
+    internal static void Log(string s) => Diag.Write("APP", s);
 
     public AppForm()    {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
@@ -84,6 +138,7 @@ internal sealed class AppForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        _wakeMsg = Program.RegisterWakeMessage();
         try
         {
             int dark = 1;
@@ -100,7 +155,7 @@ internal sealed class AppForm : Form
         float s = DeviceDpi / 96f;
         Theme.Rebuild(s);
 
-        _settings = Settings.Load();
+        _settings = Settings.Load(out string cfgWarning);
         St.IntervalMs = _settings.IntervalMs;
         St.PeriodMs = _settings.PeriodMs;
         if (St.PeriodMs < St.IntervalMs * 2L) St.PeriodMs = SmallestPeriodFor(St.IntervalMs);   // 防止 K 线周期细于采样间隔
@@ -156,6 +211,7 @@ internal sealed class AppForm : Form
         if (_settings.Maximized) WindowState = FormWindowState.Maximized;
 
         InitTray();
+        if (!string.IsNullOrEmpty(cfgWarning)) AddTape("配置提示 · " + cfgWarning, Theme.Warn);
         _timer = new System.Windows.Forms.Timer { Interval = 33 };
         _timer.Tick += OnUiTick;
         _timer.Start();
@@ -255,8 +311,13 @@ internal sealed class AppForm : Form
         {
             using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey, true);
             if (k == null) return;
-            if (_settings.AutoStart) k.SetValue(RunName, "\"" + ExePath + "\"");
-            else if (k.GetValue(RunName) != null) k.DeleteValue(RunName, false);
+            string want = "\"" + ExePath + "\"";
+            string cur = k.GetValue(RunName) as string;
+            if (_settings.AutoStart)
+            {
+                if (cur != want) k.SetValue(RunName, want);   // 程序换路径后自动改正死链
+            }
+            else if (cur != null) k.DeleteValue(RunName, false);
         }
         catch { }
     }
@@ -295,7 +356,7 @@ internal sealed class AppForm : Form
 
     private void HideToTray()
     {
-        ShowInTaskbar = false;
+        // 不改 ShowInTaskbar（会重建窗口句柄），隐藏即可
         Hide();
         try
         {
@@ -306,7 +367,6 @@ internal sealed class AppForm : Form
 
     public void RestoreFromTray()
     {
-        ShowInTaskbar = true;
         Show();
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
@@ -436,23 +496,35 @@ internal sealed class AppForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.SmoothingMode = SmoothingMode.None;
         g.PixelOffsetMode = PixelOffsetMode.Half;
         g.CompositingQuality = CompositingQuality.HighSpeed;
         g.InterpolationMode = InterpolationMode.Low;
         using (var b = new SolidBrush(Theme.BgDeep)) g.FillRectangle(b, ClientRectangle);
 
+        var __sw = System.Diagnostics.Stopwatch.GetTimestamp();
         var clip = Rectangle.Round(g.VisibleClipBounds);
+        bool __big = (long)clip.Width * clip.Height > (long)ClientSize.Width * ClientSize.Height * 0.45;
+        if (__big) Interlocked.Increment(ref _bigPaints); else Interlocked.Increment(ref _smallPaints);
         foreach (var p in _panels)
         {
             if (p.Bounds.Width <= 0 || p.Bounds.Height <= 0) continue;
             if (!p.Bounds.IntersectsWith(clip)) continue;
+            long __p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try { p.Paint(g, clip); }
-            catch (Exception ex) { Log("PAINT FAIL " + p.GetType().Name + " clip=" + clip + " :: " + ex); }
+            catch (Exception ex) { Diag.Error("PAINT-" + p.GetType().Name, ex); }
+            long __p1 = System.Diagnostics.Stopwatch.GetTimestamp();
+            lock (_panelTicks)
+            {
+                _panelTicks.TryGetValue(p.GetType().Name, out long acc);
+                _panelTicks[p.GetType().Name] = acc + (__p1 - __p0);
+            }
         }
 
         PaintSettings(g);
         PaintMenu(g);
+        Interlocked.Increment(ref _paintCount);
+        _lastPaintAt = Environment.TickCount64;
     }
 
     // ── 设置面板（自绘浮层）──────────────────────────────
@@ -463,7 +535,7 @@ internal sealed class AppForm : Form
         int w = Theme.Px(302);
         int x = Theme.Px(10);
         int y = _title.Bounds.Bottom + Theme.Px(6);
-        _setPanel = new Rectangle(x, y, w, Theme.Px(214));
+        _setPanel = new Rectangle(x, y, w, Theme.Px(252));
 
         var r = _setPanel;
         using (var sh = new SolidBrush(Color.FromArgb(70, 0, 0, 0)))
@@ -520,6 +592,13 @@ internal sealed class AppForm : Form
         ThemeChip(_setThemeAuto, "跟随系统", 2);
         ry += Theme.Px(34);
 
+        // 日志目录
+        Theme.Text(g, "诊断日志", Theme.UiM, _settingsHover == 6 ? Theme.TextHi : Theme.Txt, new Rectangle(r.X + pad, ry, Theme.Px(90), Theme.Px(22)), Theme.AL);
+        _setLog = new Rectangle(r.Right - pad - Theme.Px(52), ry + Theme.Px(1), Theme.Px(52), Theme.Px(20));
+        Theme.RoundedRect(g, _setLog, 3f, _settingsHover == 6 ? Theme.PanelSoft : Theme.ChipBg, Theme.Line2, 1f);
+        Theme.Text(g, "打开", Theme.UiXS, _settingsHover == 6 ? Theme.Gold : Theme.TextDim, _setLog, Theme.AC);
+        ry += Theme.Px(30);
+
         Theme.Text(g, "设置会自动保存到本地配置", Theme.UiXS, Theme.TextFade, new Rectangle(r.X + pad, ry, Theme.Px(240), Theme.Px(18)), Theme.AL);
     }
 
@@ -533,6 +612,7 @@ internal sealed class AppForm : Form
         else if (_setThemeDark.Contains(p)) h = 3;
         else if (_setThemeLight.Contains(p)) h = 4;
         else if (_setThemeAuto.Contains(p)) h = 5;
+        else if (_setLog.Contains(p)) h = 6;
         if (h != _settingsHover) { _settingsHover = h; Invalidate(); }
     }
 
@@ -543,6 +623,12 @@ internal sealed class AppForm : Form
         if (_setThemeDark.Contains(p)) { SetThemeMode(0); return true; }
         if (_setThemeLight.Contains(p)) { SetThemeMode(1); return true; }
         if (_setThemeAuto.Contains(p)) { SetThemeMode(2); return true; }
+        if (_setLog.Contains(p))
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Diag.LogDir) { UseShellExecute = true }); }
+            catch (Exception ex) { Diag.Error("OPEN-LOGS", ex); }
+            return true;
+        }
         if (!_setPanel.Contains(p)) { _settingsOpen = false; Invalidate(); }
         return true;
     }
@@ -663,7 +749,14 @@ internal sealed class AppForm : Form
     // ── UI 心跳 ───────────────────────────────────────────
     private void OnUiTick(object sender, EventArgs e)
     {
-        _frame += 0.033;
+        bool onScreen = Visible && WindowState != FormWindowState.Minimized;
+        if (onScreen == _hiddenMode)
+        {
+            _hiddenMode = !onScreen;
+            if (_timer != null) _timer.Interval = onScreen ? 33 : 250;
+        }
+
+        _frame += onScreen ? 0.033 : 0.25;
         St.Frame = _frame;
         _tickCount++;
 
@@ -674,21 +767,37 @@ internal sealed class AppForm : Form
             Ingest(snap);
         }
 
-        // 营收结算
+        // 营收结算（隐藏时也要继续统计）
         if (St.Economy.Enabled)
         {
-            if (!St.Paused) St.Economy.Accrue(0.033, St.Snap);
-            if (_tickCount % 2 == 0) Invalidate(_econ.Bounds);
+            if (!St.Paused) St.Economy.Accrue(onScreen ? 0.033 : 0.25, St.Snap);
+            if (onScreen) MarkDirty(_econ);
+        }
+
+        if (!onScreen) return;   // 托盘/最小化：只采样与结算，不重绘
+
+        if (St.Frame - _lastPerfAt > 30)
+        {
+            _lastPerfAt = St.Frame;
+            int cnt = Interlocked.Exchange(ref _paintCount, 0);
+            string detail = "";
+            lock (_panelTicks)
+            {
+                foreach (var kv in _panelTicks.OrderByDescending(k => k.Value).Take(6))
+                    detail += $"{kv.Key}={kv.Value * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ";
+                _panelTicks.Clear();
+            }
+            Diag.Write("PERF", $"frames={cnt}/5s big={Interlocked.Exchange(ref _bigPaints,0)} small={Interlocked.Exchange(ref _smallPaints,0)}  {detail}");
         }
 
         // 数值缓动（行情跳动感）
         bool tweening = false;
         if (!St.Paused) foreach (var m in St.Metrics) if (m.Tween()) tweening = true;
-        if (tweening && _tickCount % 2 == 0)
+        // 只做「标记」，真正重绘由 FlushDirty 按预算合并
+        if (tweening)
         {
-            Invalidate(_index.Bounds);
-            Invalidate(_inst.Bounds);
-            Invalidate(_watch.Bounds);
+            MarkDirty(_index);
+            MarkDirty(_inst);
         }
 
         if (_tickCount % 30 == 0 && _notify != null)
@@ -705,12 +814,14 @@ internal sealed class AppForm : Form
             SaveSettings();
         }
 
-        if (_chart.Advance()) Invalidate(_chart.Bounds);
-        if (_proc.Advance()) Invalidate(_proc.Bounds);
+        if (_chart.Advance()) MarkDirty(_chart);
+        if (_proc.Advance()) MarkDirty(_proc);
 
-        if (_tickCount % 3 == 0) Invalidate(_footer.Bounds);
-        if (_tickCount % 15 == 0) Invalidate(_title.Bounds);
-        if (St.SearchActive && _tickCount % 6 == 0) Invalidate(_proc.Bounds);
+        MarkDirty(_footer);
+        if (_tickCount % 20 == 0) MarkDirty(_title);
+        if (St.SearchActive && _tickCount % 6 == 0) MarkDirty(_proc);
+        if (St.Economy.Enabled) MarkDirty(_econ);
+        FlushDirty();
 
         if (_flashDirty && St.Frame - _lastDataFrame > 0.28)
         {
@@ -759,7 +870,7 @@ internal sealed class AppForm : Form
         if (St.Metrics.Count > 0) St.Selected.RebuildCandles(St.PeriodMs);
         _flashDirty = true;
         _lastDataFrame = St.Frame;
-        Invalidate();
+        MarkAllDirty();
     }
 
     private void SortProcs()
@@ -1111,6 +1222,12 @@ internal sealed class AppForm : Form
     // ── 无边框窗口的拖拽 / 缩放 ────────────────────────────
     protected override void WndProc(ref Message m)
     {
+        if (_wakeMsg != 0 && m.Msg == (int)_wakeMsg)
+        {
+            RestoreFromTray();
+            return;
+        }
+
         if (m.Msg == WM_GETMINMAXINFO)
         {
             base.WndProc(ref m);

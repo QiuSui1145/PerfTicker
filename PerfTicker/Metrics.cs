@@ -25,7 +25,21 @@ internal sealed class Metric
     public int Decimals = 2;
     public Func<Snapshot, double> Read;
 
-    public readonly List<Tick> Ticks = new(4096);
+    // 环形缓冲：固定 3600 个 tick（1s 采样约 1 小时），避免 List 扩容与头部搬移
+    private const int TickCap = 3600;
+    private readonly Tick[] _ring = new Tick[TickCap];
+    private int _head, _count;
+
+    public int TickCount => _count;
+    public Tick TickAt(int i) => _ring[(_head + i) % TickCap];
+
+    private void AppendTick(in Tick t)
+    {
+        int idx = (_head + _count) % TickCap;
+        _ring[idx] = t;
+        if (_count < TickCap) _count++;
+        else _head = (_head + 1) % TickCap;
+    }
     public readonly List<Candle> Candles = new(512);
 
     public double Value;
@@ -103,8 +117,7 @@ internal sealed class Metric
             FlashUntil = ms + 700;
         }
         if (Count <= 1) Shown = v;
-        Ticks.Add(new Tick { Ms = ms, V = v, Vol = vol });
-        if (Ticks.Count > 6000) Ticks.RemoveRange(0, 1500);
+        AppendTick(new Tick { Ms = ms, V = v, Vol = vol });
     }
 
     public void RebuildCandles(long periodMs)
@@ -113,8 +126,9 @@ internal sealed class Metric
         if (periodMs < 1) periodMs = 1000;
         long curBucket = -1;
         Candle c = null;
-        foreach (var t in Ticks)
+        for (int ti = 0; ti < _count; ti++)
         {
+            var t = TickAt(ti);
             long b = t.Ms / periodMs;
             if (c == null || b != curBucket)
             {
@@ -136,10 +150,10 @@ internal sealed class Metric
 
     public double[] Spark(int n)
     {
-        n = Math.Min(n, Ticks.Count);
+        n = Math.Min(n, _count);
         if (n <= 0) return Array.Empty<double>();
         var arr = new double[n];
-        for (int i = 0; i < n; i++) arr[i] = Ticks[Ticks.Count - n + i].V;
+        for (int i = 0; i < n; i++) arr[i] = TickAt(_count - n + i).V;
         return arr;
     }
 }

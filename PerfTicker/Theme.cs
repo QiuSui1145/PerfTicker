@@ -306,6 +306,19 @@ internal static class Theme
     }
 
     /// <summary>迷你 K 线：把数据分桶成 OHLC，用于列表里的走势列。</summary>
+    private static Pen _penUpMini, _penDownMini;
+    private static SolidBrush _brUpMini, _brDownMini;
+
+    private static void EnsureMini()
+    {
+        if (_penUpMini != null && _penUpMini.Color == Color.FromArgb(215, Up)) return;
+        _penUpMini?.Dispose(); _penDownMini?.Dispose(); _brUpMini?.Dispose(); _brDownMini?.Dispose();
+        _penUpMini = new Pen(Color.FromArgb(215, Up), 1f);
+        _penDownMini = new Pen(Color.FromArgb(215, Down), 1f);
+        _brUpMini = new SolidBrush(Up);
+        _brDownMini = new SolidBrush(Down);
+    }
+
     public static void MiniCandles(Graphics g, Rectangle r, double[] data, int bars)
     {
         if (data == null || data.Length < 2 || r.Width < 6 || r.Height < 6) return;
@@ -320,10 +333,9 @@ internal static class Theme
         float bw = Math.Max(1.1f, slot * 0.58f);
         float Y(double v) => r.Bottom - (float)((v - min) / (max - min)) * r.Height;
 
-        using var penUpM = new Pen(Color.FromArgb(215, Up), 1f);
-        using var penDnM = new Pen(Color.FromArgb(215, Down), 1f);
-        using var brUpM = new SolidBrush(Up);
-        using var brDnM = new SolidBrush(Down);
+        var __sm = g.SmoothingMode;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+        EnsureMini();
         for (int i = 0; i < bars; i++)
         {
             int i0 = (int)((long)i * n / bars);
@@ -334,10 +346,11 @@ internal static class Theme
             for (int k = i0; k < i1 && k < n; k++) { if (data[k] > h) h = data[k]; if (data[k] < l) l = data[k]; }
             bool up = c >= o;
             float cx = r.X + (i + 0.5f) * slot;
-            g.DrawLine(up ? penUpM : penDnM, cx, Y(h), cx, Y(l));
+            g.DrawLine(up ? _penUpMini : _penDownMini, cx, Y(h), cx, Y(l));
             float top = Y(Math.Max(o, c));
             float hh = Math.Max(1f, Math.Abs(Y(o) - Y(c)));
-            g.FillRectangle(up ? brUpM : brDnM, cx - bw / 2f, top, Math.Max(1f, bw), hh);
+            g.FillRectangle(up ? _brUpMini : _brDownMini, cx - bw / 2f, top, Math.Max(1f, bw), hh);
         }
+        g.SmoothingMode = __sm;
     }
 }

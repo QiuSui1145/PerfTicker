@@ -5,6 +5,8 @@ namespace PerfTicker;
 /// <summary>轻量设置持久化：位置、周期、配色、选中品种等，存于 %LOCALAPPDATA%\PerfTicker。</summary>
 internal sealed class Settings
 {
+    public int SchemaVersion { get; set; } = 1;
+
     public int X { get; set; } = int.MinValue;
     public int Y { get; set; } = int.MinValue;
     public int W { get; set; }
@@ -29,17 +31,33 @@ internal sealed class Settings
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PerfTicker", "settings.json");
 
-    public static Settings Load()
+    /// <summary>读取配置；损坏时备份为 .bak-时间戳 并通过 warning 返回原因。</summary>
+    public static Settings Load(out string warning)
     {
+        warning = null;
+        if (!File.Exists(FilePath)) return new Settings();
         try
         {
-            if (File.Exists(FilePath))
+            var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath));
+            if (s != null)
             {
-                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath));
-                if (s != null) return s;
+                s.SchemaVersion = Math.Max(s.SchemaVersion, 1);
+                return s;
             }
+            warning = "配置内容为空，已使用默认设置";
         }
-        catch { }
+        catch (Exception ex)
+        {
+            warning = "配置文件损坏，已备份并恢复默认";
+            Diag.Error("SETTINGS", ex);
+            try
+            {
+                string bak = FilePath + ".bak-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                File.Copy(FilePath, bak, true);
+                warning += "（" + Path.GetFileName(bak) + "）";
+            }
+            catch { }
+        }
         return new Settings();
     }
 
@@ -49,8 +67,9 @@ internal sealed class Settings
         {
             string dir = Path.GetDirectoryName(FilePath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }),
+                new System.Text.UTF8Encoding(false));
         }
-        catch { }
+        catch (Exception ex) { Diag.Error("SETTINGS-SAVE", ex); }
     }
 }

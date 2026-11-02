@@ -87,8 +87,7 @@ internal sealed class BookPanel : Panel
                 {
                     int bw2 = Math.Max(2, (int)((rr.Width - P(20)) * frac));
                     int hx = rr.Right - P(10) - bw2;
-                    using var heat = new LinearGradientBrush(new Rectangle(hx, rr.Y, bw2, rr.Height),
-                        Color.FromArgb(2, Theme.Up), Color.FromArgb(34, Theme.Up), 0f);
+                    using var heat = new SolidBrush(Color.FromArgb((int)(6 + 26 * frac), Theme.Up));
                     g.FillRectangle(heat, new Rectangle(hx, rr.Y + P(2), bw2, rr.Height - P(4)));
                 }
                 if (i == _hover) Theme.Fill(g, rr, Theme.RowHover);
