@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+static/fonts/*.woff2
+static/fonts/*.ttf
