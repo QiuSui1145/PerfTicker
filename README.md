@@ -6,6 +6,8 @@
 >
 > 作者 **QiuSui** · 组织 **QiuSui_Studio** · 开源协议 **GPL-3.0**
 
+> **Linux / Web 版**：见 [`linux/`](linux/) —— 无头 Linux 服务器跑一个采样服务，浏览器打开就是同一套行情终端（原 Windows 版不受影响）。
+
 ![界面预览](screenshot.png)
 
 ## 宣传片
