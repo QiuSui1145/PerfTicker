@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>性能行情终端 · PerfTicker</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23c8323a'/><text x='16' y='22' font-size='15' font-family='monospace' fill='%23ffd98a' text-anchor='middle'>PT</text></svg>">
+</head>
+<body>
+<div id="app">
+
+  <header class="titlebar">
+    <div class="brand">
+      <span class="logo">PT</span>
+      <b>性能行情终端</b>
+      <em id="hostName">Linux</em>
+    </div>
+    <div class="tstat">
+      <i class="dot" id="liveDot"></i>
+      <span id="liveText">实时采样</span>
+      <span id="sampleCost">—</span>
+    </div>
+
+    <div class="tbtns">
+      <div class="seg" id="intervalSeg">
+        <button data-ms="500">0.5s</button>
+        <button data-ms="1000" class="on">1s</button>
+        <button data-ms="2000">2s</button>
+        <button data-ms="5000">5s</button>
+        <button data-ms="10000">10s</button>
+      </div>
+      <button class="tbtn" id="btnPause">暂停</button>
+      <button class="tbtn on" id="btnEco">营收</button>
+      <button class="tbtn on" id="btnColor">红涨</button>
+      <button class="tbtn" id="btnTheme">深色</button>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <section class="indices" id="indices"></section>
+
+  <main class="grid">
+    <aside class="panel">
+      <div class="ph">自选行情 <span class="sub" id="watchCount">— 项</span></div>
+      <div class="watch-list" id="watch"></div>
+    </aside>
+
+    <section class="center">
+      <div class="panel quote">
+        <div class="q-top">
+          <div>
+            <div class="q-code" id="qCode">000001</div>
+            <div class="q-name" id="qName">CPU 综合指数</div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px">
+              <span class="q-price" id="qPrice">—</span>
+              <span class="q-chg" id="qChg">—</span>
+            </div>
+          </div>
+          <div class="q-fields" id="qFields"></div>
+        </div>
+        <div class="periods" id="periods">
+          <div class="seg">
+            <button data-p="2000">2秒K</button>
+            <button data-p="5000">5秒K</button>
+            <button data-p="10000">10秒K</button>
+            <button data-p="30000">30秒K</button>
+            <button data-p="60000">1分K</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel chart">
+        <canvas id="mainChart"></canvas>
+        <div class="tip" id="tip"></div>
+      </div>
+
+      <div class="panel eco" id="ecoPanel">
+        <div class="ph">营收中心 <span class="sub">算力经营 · 空转也计成本</span>
+          <span class="sub" style="margin-left:auto" id="ecoRate"></span>
+        </div>
+        <div class="eco-body">
+          <div>
+            <div class="eco-k">累计营收</div>
+            <div class="eco-total" id="ecoTot">¥ 0</div>
+          </div>
+          <div>
+            <div class="eco-k">每秒净收</div>
+            <div class="eco-total" id="ecoNet" style="font-size:15px">+0.00</div>
+          </div>
+          <div class="eco-bars" id="ecoBars"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right">
+      <div class="panel flow">
+        <div class="ph">主力动向 <span class="sub" id="flowSub">Top 10 进程</span></div>
+        <div class="flow-list" id="flow"></div>
+      </div>
+      <div class="panel tape">
+        <div class="ph">逐笔成交 <span class="sub">事件流水</span></div>
+        <div class="tape-list" id="tape"></div>
+      </div>
+    </aside>
+  </main>
+
+  <section class="panel procs">
+    <div class="ph">个股列表 <span class="sub" id="procCount">— 进程</span>
+      <input id="search" placeholder="搜索进程 / PID   (Ctrl+F)">
+    </div>
+    <div class="ptable" id="ptable">
+      <div class="phead" id="phead">
+        <span data-sort="pid">PID</span>
+        <span data-sort="name">名称</span>
+        <span data-sort="cpu" class="up">CPU%↓</span>
+        <span data-sort="d">涨跌</span>
+        <span data-sort="mem">内存</span>
+        <span data-sort="thr">线程</span>
+        <span data-sort="fd">FD</span>
+        <span>走势</span>
+      </div>
+      <div id="prows"></div>
+    </div>
+  </section>
+
+  <footer class="statusbar">
+    <span id="fstat">采样 —</span>
+    <span>进程 <b id="fcProc">—</b> · 线程 <b id="fcThr">—</b> · FD <b id="fcFd">—</b> · 运行 <b id="fcUp">—</b></span>
+    <div class="marquee"><div class="mq" id="marquee"></div></div>
+  </footer>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
